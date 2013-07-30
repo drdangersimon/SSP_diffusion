@@ -4,10 +4,10 @@
 
 import numpy as nu
 from scipy.cluster.vq import kmeans2
-from scipy.sparse import dok_matrix as spars
-from scipy.sparse.linalg import svds
+#from scipy.sparse.linalg import svds as svd
+from scipy.linalg import svd
 
-def diffuse(D,eps_val,t=None,neigen=None,threshold = 5E-6):
+def diffuse(D,eps_val,neigen=None,t=None,threshold = 5E-6):
     ''' diffuse(D,eps_val,t,neigen)
     (ndarray or matrix, float, float, float
     D          --- pairwise distances, n-by-n matrix
@@ -31,23 +31,30 @@ def diffuse(D,eps_val,t=None,neigen=None,threshold = 5E-6):
     #v = v(:)
     A = K / nu.asarray(v.T * v)   # symmetric graph Laplacian
     
-    A[threshold < A] = 0
+    #A[threshold < A] = 0
     #A = sparse(A)  # make matrix sparse to speed up calcs
     #print A.nnz
     if neigen is None:
         # eigendecomposition of symmetric matrix
-        U,eigenvals,V = svds(A,51)  
+        U,eigenvals,V = svd(A) #,51)
         first_colum = nu.tile(U[:,0],(51,1)).T
+        eigenvals = eigenvals[:51]
+        # right eigenv of Markov matrix
+        psi = U[:,:51] / first_colum
+        # left eigenv of Markov matrix
+        phi = U[:,:51] * first_colum
+        
     else:
         # eigendecomposition of symmetric matrix
-        U,eigenvals,V = svds(A, neigen+1) 
+        U,eigenvals,V = svd(A) #, neigen+1) 
         first_colum = nu.tile(U[:,0],(neigen+1,1)).T
-    # right eigenv of Markov matrix
-    psi = U / first_colum
-    # left eigenv of Markov matrix
-    phi = U * first_colum
+        eigenvals = eigenvals[:neigen+1]
+        # right eigenv of Markov matrix
+        psi = U[:,:neigen+1] / first_colum
+        # left eigenv of Markov matrix
+        phi = U[:,:neigen+1] * first_colum
 
-    eigenvals = eigenvals[::-1]
+    #eigenvals.sort()
     # DIFFUSION COORDINATES
     if not t is None: # fixed scale parameter
         lambda_t = eigenvals[1:]**t
@@ -55,11 +62,11 @@ def diffuse(D,eps_val,t=None,neigen=None,threshold = 5E-6):
         if neigen is None: # use neigen corresponding to 95% drop-off in lambda_t
             lam = lambda_t[0,:] / lambda_t[0,0]
             neigen = nu.sum(lam < .05) # default number of eigenvalues
-            if neigen == 0:
+            if neigen < 1:
                 neigen = 50 # use neigen=50 if 95% dropoff not attained
-            print 'Used default value: %f dimensions'%neigen
+            print 'Used default value: % dimensions'%neigen
   
-        X = psi[:,:neigen] * lambda_t[:,:neigen]  # diffusion coords X
+        X = psi[:,1:neigen+1] * lambda_t[:,:neigen+1]  # diffusion coords X
         #= right eigenvectors rescaled with eigenvalues
     else:  # multiscale geomtry
         lambda_multi = eigenvals[1:] / (1-eigenvals[1:])
@@ -67,10 +74,10 @@ def diffuse(D,eps_val,t=None,neigen=None,threshold = 5E-6):
         if neigen is None:  # use neigen corresponding to 95% drop-off in lambda_multi
             lam = lambda_multi[0,:] / lambda_multi[0,0]
             neigen = nu.min(lam[lam<.05])
-            if neigen == 0:# default number of eigenvalues
+            if neigen < 1:# default number of eigenvalues
                 neigen =  50 # use neigen=50 if 95% dropoff not attained
-            print 'Used default value: %f dimensions'%neigen
-        X = psi[:,1:neigen] * lambda_multi[:,:neigen]  # diffusion coords X
+            print 'Used default value: %i dimensions'%neigen
+        X = psi[:,1:neigen+1] * lambda_multi[:,:neigen+1]  # diffusion coords X
         
 
     return X,eigenvals, psi, phi
